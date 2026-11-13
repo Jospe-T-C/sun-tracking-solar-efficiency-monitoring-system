@@ -140,3 +140,17 @@ The primary objective of this project is to demonstrate how embedded systems and
 **Controller:** ESP32
 
 **Monitoring Interface:** HTML, CSS and JavaScript Web Dashboard
+
+## Project Gallery
+
+### Live Monitoring Dashboard
+
+![Solar Tracker Dashboard](Images/Dashboard.png)
+
+### Circuit Diagram
+
+![Solar Tracker Circuit Diagram](Images/Circuit%20Diagram.png)
+
+### Project Poster
+
+![Solar Panel Efficiency Tracker Poster](Images/Solar%20Panel%20Efficiency%20Tracker%20poster.png)

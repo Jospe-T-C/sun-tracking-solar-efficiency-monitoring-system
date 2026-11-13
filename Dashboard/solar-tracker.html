@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Solar Tracker — Telemetry Console</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{
+    --bg: #0d1210;
+    --bg-panel: #121915;
+    --grid-line: #1c2620;
+    --ink: #e8ede6;
+    --ink-dim: #8fa198;
+    --ink-faint: #566058;
+    --amber: #f2a83c;
+    --amber-dim: #6b4e1e;
+    --cyan: #5fd0c9;
+    --red: #e0654f;
+    --border: #263029;
+    --mono: "IBM Plex Mono", "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace;
+    --sans: "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif;
+  }
+  :root:not([data-theme="light"]){ }
+  :root[data-theme="light"]{
+    --bg:#f2f0e9; --bg-panel:#fbfaf6; --grid-line:#e3e0d5; --ink:#1c221d;
+    --ink-dim:#5b6459; --ink-faint:#98a094; --amber-dim:#f0dcb0; --border:#ddd8c9;
+  }
+  @media (prefers-color-scheme: light){
+    :root:not([data-theme="dark"]){
+      --bg:#f2f0e9; --bg-panel:#fbfaf6; --grid-line:#e3e0d5; --ink:#1c221d;
+      --ink-dim:#5b6459; --ink-faint:#98a094; --amber-dim:#f0dcb0; --border:#ddd8c9;
+    }
+  }
+
+  *{ box-sizing:border-box; }
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:var(--sans);
+    background-image:
+      linear-gradient(var(--grid-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+    background-size: 28px 28px;
+    min-height:100vh;
+  }
+
+  link,style{}
+
+  .wrap{ max-width:1180px; margin:0 auto; padding:28px 22px 60px; }
+
+  header.top{
+    display:flex; justify-content:space-between; align-items:flex-end;
+    flex-wrap:wrap; gap:16px;
+    border-bottom:1px solid var(--border);
+    padding-bottom:18px; margin-bottom:22px;
+  }
+  .title-block h1{
+    font-family:var(--mono); font-weight:600; font-size:1.5rem; margin:0 0 4px;
+    letter-spacing:0.02em;
+  }
+  .title-block h1 span{ color:var(--amber); }
+  .title-block p{ margin:0; color:var(--ink-dim); font-size:0.88rem; max-width:46ch; }
+
+  .conn{ display:flex; align-items:center; gap:12px; }
+  .conn-status{
+    display:flex; align-items:center; gap:8px; font-family:var(--mono);
+    font-size:0.82rem; color:var(--ink-dim);
+  }
+  .dot{ width:9px; height:9px; border-radius:50%; background:var(--ink-faint); flex:none; }
+  .dot.live{ background:var(--cyan); box-shadow:0 0 0 3px color-mix(in srgb, var(--cyan) 20%, transparent); }
+  .dot.err{ background:var(--red); }
+
+  button{
+    font-family:var(--mono); font-size:0.85rem; cursor:pointer;
+    background:var(--bg-panel); color:var(--ink); border:1px solid var(--border);
+    padding:9px 16px; border-radius:3px; transition:border-color .15s ease, color .15s ease;
+  }
+  button:hover:not(:disabled){ border-color:var(--amber); color:var(--amber); }
+  button:disabled{ opacity:0.4; cursor:default; }
+  button:focus-visible, [tabindex]:focus-visible{ outline:2px solid var(--cyan); outline-offset:2px; }
+  button.primary{ background:var(--amber); color:#1a1204; border-color:var(--amber); }
+  button.primary:hover:not(:disabled){ color:#1a1204; filter:brightness(1.08); }
+
+  .support-note{
+    font-size:0.78rem; color:var(--ink-faint); margin:10px 0 0; font-family:var(--mono);
+  }
+
+  /* Layout */
+  .grid-main{ display:grid; grid-template-columns: 1.15fr 1fr; gap:20px; }
+  @media (max-width:880px){ .grid-main{ grid-template-columns:1fr; } }
+
+  .panel{
+    background:var(--bg-panel); border:1px solid var(--border); border-radius:4px;
+    padding:20px;
+  }
+  .panel + .panel{ margin-top:20px; }
+  .panel h2{
+    font-family:var(--mono); font-size:0.75rem; text-transform:uppercase; letter-spacing:0.08em;
+    color:var(--ink-dim); margin:0 0 16px; font-weight:600;
+  }
+
+  /* Sun position dial */
+  .dial-row{ display:flex; gap:24px; align-items:center; flex-wrap:wrap; }
+  .dial-wrap{ flex:none; }
+  .dial-readout{ flex:1; min-width:160px; }
+  .dial-readout .big{
+    font-family:var(--mono); font-size:2.6rem; color:var(--amber); line-height:1; font-weight:600;
+  }
+  .dial-readout .lbl{ color:var(--ink-dim); font-size:0.82rem; margin-top:6px; }
+
+  /* Metric grid */
+  .metrics{ display:grid; grid-template-columns:repeat(2,1fr); gap:1px; background:var(--border); border:1px solid var(--border); border-radius:4px; overflow:hidden; }
+  .metric{ background:var(--bg-panel); padding:16px 18px; }
+  .metric .lbl{ font-family:var(--mono); font-size:0.72rem; color:var(--ink-dim); text-transform:uppercase; letter-spacing:0.06em; }
+  .metric .val{ font-family:var(--mono); font-size:1.7rem; margin-top:6px; color:var(--ink); }
+  .metric .val.warn{ color:var(--red); }
+  .metric .unit{ font-size:1rem; color:var(--ink-faint); margin-left:2px; }
+
+  /* LDR bars */
+  .ldr-bars{ display:flex; gap:18px; }
+  .ldr-col{ flex:1; }
+  .ldr-col .lbl{ font-family:var(--mono); font-size:0.75rem; color:var(--ink-dim); margin-bottom:8px; display:flex; justify-content:space-between; }
+  .ldr-track{ height:14px; border-radius:3px; background:var(--grid-line); overflow:hidden; border:1px solid var(--border); }
+  .ldr-fill{ height:100%; background:linear-gradient(90deg, var(--amber-dim), var(--amber)); width:0%; transition:width .4s ease; }
+
+  /* chart */
+  canvas{ width:100%; display:block; }
+  .chart-legend{ display:flex; gap:16px; margin-top:10px; font-family:var(--mono); font-size:0.75rem; color:var(--ink-dim); flex-wrap:wrap; }
+  .chart-legend span{ display:inline-flex; align-items:center; gap:6px; }
+  .swatch{ width:10px; height:10px; border-radius:2px; display:inline-block; }
+
+  /* log */
+  .log{
+    font-family:var(--mono); font-size:0.78rem; color:var(--ink-dim);
+    max-height:220px; overflow-y:auto; line-height:1.6;
+    background:var(--bg); border:1px solid var(--border); border-radius:3px; padding:10px 12px;
+  }
+  .log div:last-child{ color:var(--cyan); }
+  .log::-webkit-scrollbar{ width:8px; }
+  .log::-webkit-scrollbar-thumb{ background:var(--border); border-radius:4px; }
+
+  .empty{
+    color:var(--ink-faint); font-size:0.85rem; font-family:var(--mono);
+    padding:30px 10px; text-align:center; border:1px dashed var(--border); border-radius:4px;
+  }
+
+  footer{ margin-top:26px; color:var(--ink-faint); font-size:0.75rem; font-family:var(--mono); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div class="title-block">
+      <h1>SOLAR<span>·</span>TRACKER</h1>
+      <p>Live telemetry from the ESP32 single-axis tracking unit, read straight off the USB serial line.</p>
+    </div>
+    <div class="conn">
+      <div class="conn-status"><span class="dot" id="dot"></span><span id="statusText">Disconnected</span></div>
+      <button class="primary" id="connectBtn">Connect device</button>
+      <button id="disconnectBtn" disabled>Disconnect</button>
+    </div>
+  </header>
+
+  <div id="unsupported" class="empty" style="display:none;">
+    This browser doesn't support the Web Serial API. Open this page in a desktop build of Chrome or Edge, plug the ESP32 in over USB, and click Connect device.
+  </div>
+
+  <div class="grid-main" id="mainGrid">
+
+    <div class="col-left">
+      <div class="panel">
+        <h2>Tracking angle</h2>
+        <div class="dial-row">
+          <div class="dial-wrap">
+            <svg id="dialSvg" width="180" height="180" viewBox="0 0 180 180" role="img" aria-label="Servo angle dial">
+              <path d="M 20 150 A 110 110 0 0 1 160 150" fill="none" stroke="var(--grid-line)" stroke-width="10" stroke-linecap="round"/>
+              <path id="dialArc" d="M 20 150 A 110 110 0 0 1 160 150" fill="none" stroke="var(--amber)" stroke-width="10" stroke-linecap="round" stroke-dasharray="0 400"/>
+              <line id="needle" x1="90" y1="150" x2="90" y2="55" stroke="var(--ink)" stroke-width="3" stroke-linecap="round"/>
+              <circle cx="90" cy="150" r="6" fill="var(--ink)"/>
+              <text x="20" y="168" font-family="var(--mono)" font-size="10" fill="var(--ink-faint)">20°</text>
+              <text x="140" y="168" font-family="var(--mono)" font-size="10" fill="var(--ink-faint)">200°</text>
+            </svg>
+          </div>
+          <div class="dial-readout">
+            <div class="big" id="angleVal">—</div>
+            <div class="lbl">servo position, 20°–200° sweep</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Light sensors (LDR)</h2>
+        <div class="ldr-bars">
+          <div class="ldr-col">
+            <div class="lbl"><span>Left</span><span id="ldrLeftVal">—</span></div>
+            <div class="ldr-track"><div class="ldr-fill" id="ldrLeftFill"></div></div>
+          </div>
+          <div class="ldr-col">
+            <div class="lbl"><span>Right</span><span id="ldrRightVal">—</span></div>
+            <div class="ldr-track"><div class="ldr-fill" id="ldrRightFill"></div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Raw stream</h2>
+        <div class="log" id="log"><div class="empty" style="border:none;padding:6px 0;">Waiting for connection…</div></div>
+      </div>
+    </div>
+
+    <div class="col-right">
+      <div class="panel">
+        <h2>Readings</h2>
+        <div class="metrics">
+          <div class="metric"><div class="lbl">Solar output</div><div class="val" id="solarVal">—<span class="unit">V</span></div></div>
+          <div class="metric"><div class="lbl">Ambient temp</div><div class="val" id="tempVal">—<span class="unit">°C</span></div></div>
+          <div class="metric"><div class="lbl">Humidity</div><div class="val" id="humVal">—<span class="unit">%</span></div></div>
+          <div class="metric"><div class="lbl">LDR difference</div><div class="val" id="diffVal">—</div></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Solar voltage &amp; angle, last 60 readings</h2>
+        <canvas id="chart" height="180"></canvas>
+        <div class="chart-legend">
+          <span><span class="swatch" style="background:var(--amber)"></span>Solar (V)</span>
+          <span><span class="swatch" style="background:var(--cyan)"></span>Angle (°, scaled)</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <footer>Data is read locally over USB from your ESP32 and is never sent anywhere — nothing here leaves your browser.</footer>
+</div>
+
+<script>
+(function(){
+  const LINE_RE = /Angle:\s*(-?\d+)\s*°?\s*\|\s*Left LDR:\s*(\d+)\s*\|\s*Right LDR:\s*(\d+)\s*\|\s*Solar:\s*([\d.]+)\s*V\s*\|\s*Temp:\s*([\d.]+)\s*°?C\s*\|\s*Humidity:\s*([\d.]+)\s*%/i;
+
+  const els = {
+    dot: document.getElementById('dot'),
+    statusText: document.getElementById('statusText'),
+    connectBtn: document.getElementById('connectBtn'),
+    disconnectBtn: document.getElementById('disconnectBtn'),
+    unsupported: document.getElementById('unsupported'),
+    mainGrid: document.getElementById('mainGrid'),
+    log: document.getElementById('log'),
+    angleVal: document.getElementById('angleVal'),
+    dialArc: document.getElementById('dialArc'),
+    needle: document.getElementById('needle'),
+    ldrLeftVal: document.getElementById('ldrLeftVal'),
+    ldrRightVal: document.getElementById('ldrRightVal'),
+    ldrLeftFill: document.getElementById('ldrLeftFill'),
+    ldrRightFill: document.getElementById('ldrRightFill'),
+    solarVal: document.getElementById('solarVal'),
+    tempVal: document.getElementById('tempVal'),
+    humVal: document.getElementById('humVal'),
+    diffVal: document.getElementById('diffVal'),
+    chart: document.getElementById('chart'),
+  };
+
+  const MAX_LDR = 4095;
+  const history = { solar: [], angle: [] };
+  const MAX_POINTS = 60;
+
+  let port, reader, keepReading = false;
+
+  function supportsSerial(){ return 'serial' in navigator; }
+
+  if(!supportsSerial()){
+    els.unsupported.style.display = 'block';
+    els.connectBtn.disabled = true;
+  }
+
+  function setStatus(state, text){
+    els.dot.className = 'dot' + (state ? ' ' + state : '');
+    els.statusText.textContent = text;
+  }
+
+  function appendLog(line){
+    const wasEmpty = els.log.querySelector('.empty');
+    if(wasEmpty) els.log.innerHTML = '';
+    const div = document.createElement('div');
+    div.textContent = line;
+    els.log.appendChild(div);
+    while(els.log.children.length > 80) els.log.removeChild(els.log.firstChild);
+    els.log.scrollTop = els.log.scrollHeight;
+  }
+
+  function polarPoint(cx, cy, r, deg){
+    const rad = (deg - 180) * Math.PI / 180;
+    return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
+  }
+
+  function updateDial(angle){
+    // servo sweeps 20 - 200, map to a 0-180 visual arc
+    const clamped = Math.max(20, Math.min(200, angle));
+    const frac = (clamped - 20) / (200 - 20);
+    const sweepDeg = frac * 180;
+    // arc length approximation via dasharray on a ~283 length path (radius110*pi)
+    const pathLen = Math.PI * 110;
+    els.dialArc.setAttribute('stroke-dasharray', (frac * pathLen).toFixed(1) + ' 500');
+    const tip = polarPoint(90, 150, 85, sweepDeg);
+    els.needle.setAttribute('x2', tip.x.toFixed(1));
+    els.needle.setAttribute('y2', tip.y.toFixed(1));
+  }
+
+  function drawChart(){
+    const canvas = els.chart;
+    const dpr = window.devicePixelRatio || 1;
+    const cssW = canvas.clientWidth || 480;
+    const cssH = 180;
+    canvas.width = cssW * dpr;
+    canvas.height = cssH * dpr;
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.clearRect(0,0,cssW,cssH);
+
+    const styles = getComputedStyle(document.documentElement);
+    const gridColor = styles.getPropertyValue('--grid-line').trim();
+    const amber = styles.getPropertyValue('--amber').trim();
+    const cyan = styles.getPropertyValue('--cyan').trim();
+    const inkFaint = styles.getPropertyValue('--ink-faint').trim();
+
+    const padL = 34, padR = 8, padT = 10, padB = 18;
+    const plotW = cssW - padL - padR, plotH = cssH - padT - padB;
+
+    // grid
+    ctx.strokeStyle = gridColor; ctx.lineWidth = 1;
+    for(let i=0;i<=4;i++){
+      const y = padT + plotH * i/4;
+      ctx.beginPath(); ctx.moveTo(padL,y); ctx.lineTo(cssW-padR,y); ctx.stroke();
+    }
+
+    if(history.solar.length < 2){
+      ctx.fillStyle = inkFaint; ctx.font = '12px monospace';
+      ctx.fillText('Collecting readings…', padL, padT + plotH/2);
+      return;
+    }
+
+    const solarMax = Math.max(8, ...history.solar) * 1.1;
+    const n = history.solar.length;
+
+    function plot(arr, max, color){
+      ctx.beginPath();
+      arr.forEach((v,i)=>{
+        const x = padL + (plotW * i/(MAX_POINTS-1));
+        const y = padT + plotH - (v/max)*plotH;
+        if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+      });
+      ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke();
+    }
+
+    // offset so latest points sit right-aligned when fewer than MAX_POINTS
+    const offset = MAX_POINTS - n;
+    function plotOffset(arr, max, color){
+      ctx.beginPath();
+      arr.forEach((v,i)=>{
+        const x = padL + (plotW * (i+offset)/(MAX_POINTS-1));
+        const y = padT + plotH - (v/max)*plotH;
+        if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+      });
+      ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke();
+    }
+
+    plotOffset(history.solar, solarMax, amber);
+    plotOffset(history.angle, 200, cyan);
+
+    ctx.fillStyle = inkFaint; ctx.font = '10px monospace';
+    ctx.fillText(solarMax.toFixed(1)+'V', 2, padT+4);
+    ctx.fillText('0', 10, padT+plotH+4);
+  }
+
+  function handleLine(line){
+    appendLog(line);
+    const m = LINE_RE.exec(line);
+    if(!m) return;
+    const [, angleStr, ldrLStr, ldrRStr, solarStr, tempStr, humStr] = m;
+    const angle = parseInt(angleStr,10);
+    const ldrL = parseInt(ldrLStr,10);
+    const ldrR = parseInt(ldrRStr,10);
+    const solar = parseFloat(solarStr);
+    const temp = parseFloat(tempStr);
+    const hum = parseFloat(humStr);
+
+    els.angleVal.textContent = angle + '°';
+    updateDial(angle);
+
+    els.ldrLeftVal.textContent = ldrL;
+    els.ldrRightVal.textContent = ldrR;
+    els.ldrLeftFill.style.width = Math.min(100,(ldrL/MAX_LDR)*100) + '%';
+    els.ldrRightFill.style.width = Math.min(100,(ldrR/MAX_LDR)*100) + '%';
+
+    els.solarVal.innerHTML = solar.toFixed(2) + '<span class="unit">V</span>';
+    els.solarVal.classList.toggle('warn', solar < 1);
+    els.tempVal.innerHTML = temp.toFixed(1) + '<span class="unit">°C</span>';
+    els.humVal.innerHTML = hum.toFixed(1) + '<span class="unit">%</span>';
+    els.diffVal.textContent = Math.abs(ldrL - ldrR);
+
+    history.solar.push(solar);
+    history.angle.push(angle);
+    if(history.solar.length > MAX_POINTS){ history.solar.shift(); history.angle.shift(); }
+    drawChart();
+  }
+
+  let buffer = '';
+  async function readLoop(){
+    const textDecoder = new TextDecoderStream();
+    const readableClosed = port.readable.pipeTo(textDecoder.writable);
+    reader = textDecoder.readable.getReader();
+    try{
+      while(keepReading){
+        const { value, done } = await reader.read();
+        if(done) break;
+        if(value){
+          buffer += value;
+          let idx;
+          while((idx = buffer.indexOf('\n')) >= 0){
+            const line = buffer.slice(0, idx).replace(/\r$/,'');
+            buffer = buffer.slice(idx+1);
+            if(line.trim()) handleLine(line.trim());
+          }
+        }
+      }
+    } catch(err){
+      appendLog('[connection lost: ' + err.message + ']');
+      setStatus('err','Connection lost');
+    } finally {
+      reader.releaseLock();
+      await readableClosed.catch(()=>{});
+    }
+  }
+
+  async function connect(){
+    try{
+      port = await navigator.serial.requestPort();
+      await port.open({ baudRate: 115200 });
+      keepReading = true;
+      setStatus('live','Connected');
+      els.connectBtn.disabled = true;
+      els.disconnectBtn.disabled = false;
+      appendLog('[connected at 115200 baud]');
+      readLoop();
+    } catch(err){
+      if(err && err.name === 'NotFoundError') return; // user cancelled the picker
+      appendLog('[connect failed: ' + err.message + ']');
+      setStatus('err','Connection failed');
+    }
+  }
+
+  async function disconnect(){
+    keepReading = false;
+    try{ if(reader) await reader.cancel(); } catch(e){}
+    try{ if(port) await port.close(); } catch(e){}
+    setStatus('', 'Disconnected');
+    els.connectBtn.disabled = false;
+    els.disconnectBtn.disabled = true;
+    appendLog('[disconnected]');
+  }
+
+  els.connectBtn.addEventListener('click', connect);
+  els.disconnectBtn.addEventListener('click', disconnect);
+
+  window.addEventListener('resize', drawChart);
+  drawChart();
+})();
+</script>
+</body>
+</html>
